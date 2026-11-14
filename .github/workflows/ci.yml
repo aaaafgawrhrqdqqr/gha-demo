@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', '.github/workflows/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: production へデプロイする
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        node: ['22.x', '24.x']
+    uses: ./.github/workflows/test.yml
+    with:
+      node-version: ${{ matrix.node }}
+
+  token-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GITHUB_TOKEN でラベルを作ってみる
+        run: gh label create from-actions --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && (github.event_name == 'push' || inputs.deploy)
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: リソース グループを読む
+        run: az group show -n rg-blog-d8-oidc --query "{name:name, location:location}" -o table
+
+  login-without-env:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
